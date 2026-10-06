@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1014">
+<title>CarLight Bench</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: phone-first. Sticky bar (status + connect), car preview, tab strip, one panel stack per tab. Dark-only on purpose: used in a car at night. */
+:root {
+  color-scheme: dark;
+  --bg: #0b1014; --panel: #121a20; --panel2: #18222a; --line: #26333d;
+  --fg: #e6edf2; --muted: #8e9daa; --accent: #3cc3cf; --ok: #5cc98a; --warn: #f0a94a; --err: #ff6b6b;
+  --f-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.5 var(--f-body); }
+.bar { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); padding: calc(10px + env(safe-area-inset-top, 0px)) 16px 10px; display: grid; gap: 8px; }
+.bar-top { display: flex; align-items: center; gap: 10px; }
+.brand { font-family: var(--f-display); font-size: 1.45rem; font-weight: 700; letter-spacing: .02em; margin-right: auto; }
+#status { font-size: .85rem; color: var(--muted); display: flex; align-items: center; gap: 6px; min-width: 0; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+.dot.demo { background: var(--warn); }
+#toast { font-size: .8rem; color: var(--muted); font-family: var(--f-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 1.2em; }
+#toast.err { color: var(--err); }
+.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.tabs button { padding: 9px 4px; font-size: .9rem; }
+.tabs button[aria-selected="true"] { background: var(--accent); color: #062126; border-color: var(--accent); }
+main { max-width: 760px; margin: 0 auto; padding-inline: 16px; padding-block: 14px calc(60px + env(safe-area-inset-bottom, 0px)); display: grid; gap: 14px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+h2 { font-family: var(--f-display); font-size: 1.35rem; font-weight: 600; margin: 0; letter-spacing: .02em; }
+h3 { font: 600 .74rem var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 4px 0 0; }
+p { margin: 0; }
+.hint { color: var(--muted); font-size: .9rem; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.row > .grow { flex: 1 1 160px; min-width: 0; }
+button { font: 600 .95rem var(--f-body); color: var(--fg); background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 11px 14px; cursor: pointer; min-height: 44px; }
+button:active { transform: scale(.98); }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); color: #062126; border-color: var(--accent); }
+button.big { font-size: 1.1rem; padding: 14px 18px; flex: 1 1 140px; }
+button:disabled { opacity: .45; }
+label { display: inline-flex; gap: 8px; align-items: center; }
+input[type=checkbox], input[type=radio] { width: 20px; height: 20px; accent-color: var(--accent); }
+input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
+select { font: .95rem var(--f-body); color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; min-height: 44px; width: 100%; }
+input[type=color] { width: 56px; height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); padding: 3px; }
+.slider { display: grid; grid-template-columns: 96px minmax(0, 1fr) 44px; gap: 10px; align-items: center; }
+.slider output { font-family: var(--f-mono); font-variant-numeric: tabular-nums; text-align: right; color: var(--muted); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.grid button { font-weight: 500; font-size: .88rem; text-align: left; }
+.sw { width: 44px; height: 44px; border-radius: 10px; padding: 0; }
+.zones label { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+
+.preview { display: flex; gap: 14px; align-items: center; }
+.preview svg { width: 92px; height: auto; flex: none; }
+.preview .legend { font-size: .85rem; color: var(--muted); }
+.region { transition: fill .05s linear; }
+@media (prefers-reduced-motion: reduce) { .region { transition: none; } }
+
+.step { font-family: var(--f-display); font-size: 1.6rem; font-weight: 600; }
+.answers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.answers button { min-height: 52px; }
+.found { display: grid; gap: 6px; }
+.found div { display: flex; justify-content: space-between; gap: 10px; padding: 8px 10px; background: var(--panel2); border-radius: 8px; font-size: .9rem; }
+.found .code { font-family: var(--f-mono); color: var(--muted); font-size: .8rem; }
+.safe { border-left: 3px solid var(--ok); background: color-mix(in srgb, var(--ok) 10%, var(--panel)); padding: 10px 12px; border-radius: 0 8px 8px 0; font-size: .9rem; }
+#log { font: .74rem/1.55 var(--f-mono); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px; height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+#log .tx { color: var(--accent); } #log .rx { color: var(--ok); } #log .err { color: var(--err); } #log .info { color: var(--muted); }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <div class="bar-top">
+    <span class="brand">CarLight Bench</span>
+    <button class="primary" id="btnConnect">Connect</button>
+  </div>
+  <div id="status"><span class="dot" id="dot"></span><span id="statusText">Not connected</span></div>
+  <div id="toast"></div>
+  <div class="tabs" role="tablist">
+    <button role="tab" data-tab="lights" aria-selected="true">Lights</button>
+    <button role="tab" data-tab="finder">Find doors</button>
+    <button role="tab" data-tab="cop">Cop</button>
+    <button role="tab" data-tab="more">More</button>
+  </div>
+</div>
+
+<main>
+
+<div class="preview">
+  <svg viewBox="0 0 160 260" role="img" aria-label="Car from above, front at the top, showing what was last sent to each light">
+    <rect x="18" y="10" width="124" height="240" rx="52" fill="none" stroke="#3a4a56" stroke-width="3"/>
+    <rect class="region" id="r-dash" x="48" y="38" width="64" height="40" rx="10" fill="#1a232a"/>
+    <rect class="region" id="r-lf" x="22" y="92" width="12" height="58" rx="5" fill="#1a232a"/>
+    <rect class="region" id="r-lr" x="22" y="158" width="12" height="58" rx="5" fill="#1a232a"/>
+    <rect class="region" id="r-rf" x="126" y="92" width="12" height="58" rx="5" fill="#1a232a"/>
+    <rect class="region" id="r-rr" x="126" y="158" width="12" height="58" rx="5" fill="#1a232a"/>
+    <rect class="region" id="r-rear" x="48" y="214" width="64" height="22" rx="8" fill="#1a232a"/>
+    <text x="80" y="28" text-anchor="middle" font-family="sans-serif" font-size="14" fill="#8e9daa">▲</text>
+  </svg>
+  <p class="legend">Shows what the app last told each light to do. Front of the car is at the top; left doors on the left.</p>
+</div>
+
+<!-- ============ LIGHTS ============ -->
+<section data-panel="lights" class="tabpanel">
+  <div class="panel">
+    <h2>Power</h2>
+    <div class="row">
+      <button class="big" id="btnOn">On</button>
+      <button class="big" id="btnOff">Off</button>
+    </div>
+  </div>
+  <div class="panel" id="zonePanel">
+    <h2>Which lights</h2>
+    <div class="row zones">
+      <label><input type="checkbox" id="zDash" checked> Dashboard</label>
+      <label><input type="checkbox" id="zDoors" checked> Doors</label>
+      <label><input type="checkbox" id="zRear" checked> Rear</label>
+    </div>
+    <p class="hint">Used by colour, brightness, speed and effects below.</p>
+  </div>
+  <p class="hint" id="zoneNoteE1" hidden>Door strip controller: commands go to all strips (it has no light selection).</p>
+  <div class="panel">
+    <h2>Colour</h2>
+    <div class="row"><input type="color" id="color" value="#ff0000" aria-label="Pick any colour"><div class="row" id="swatches"></div></div>
+    <div class="slider"><label for="bright">Brightness</label><input type="range" id="bright" min="1" max="100" value="100"><output id="brightOut">100</output></div>
+    <div class="slider"><label for="speed">Speed</label><input type="range" id="speed" min="0" max="100" value="50"><output id="speedOut">50</output></div>
+  </div>
+  <div class="panel">
+    <h2>Effects</h2>
+    <div class="grid" id="modes"></div>
+  </div>
+  <div class="panel">
+    <h2>Presets</h2>
+    <p class="hint">The original app's themes. Each sets the dashboard and the doors separately, so they ignore "Which lights".</p>
+    <div class="grid" id="presets"></div>
+  </div>
+  <div class="panel">
+    <h2>Music (controller's mic)</h2>
+    <div class="grid" id="micModes"></div>
+    <div class="slider"><label for="sens">Sensitivity</label><input type="range" id="sens" min="0" max="100" value="50"><output id="sensOut">50</output></div>
+  </div>
+</section>
+
+<!-- ============ FINDER ============ -->
+<section data-panel="finder" class="tabpanel" hidden>
+  <div class="panel">
+    <h2>Find the door modules</h2>
+    <p class="hint">The app flashes red using a different hidden code each time. After each flash, tap what turned red. Test 1 is a check: all doors should go red. About two minutes.</p>
+    <div class="safe">Uses only the "set colour" command. Nothing is saved on the controller; switching the lights off and on again undoes everything.</div>
+    <div class="row"><button class="big primary" id="fStart">Start</button><button class="big" id="fAgain">Flash again</button></div>
+  </div>
+  <div class="panel" id="fRun" hidden>
+    <div class="step" id="fStep"></div>
+    <p class="hint" id="fAsk">What turned red?</p>
+    <div class="answers" id="fAnswers"></div>
+    <div class="row"><button id="fBack">Back one step</button><button id="fSkip">Skip</button></div>
+  </div>
+  <div class="panel">
+    <h2>Results</h2>
+    <div class="found" id="fFound"><p class="hint">Nothing tested yet.</p></div>
+    <div class="row"><button id="fCopy">Copy results for Claude</button><button id="fClear">Clear results</button></div>
+  </div>
+</section>
+
+<!-- ============ COP ============ -->
+<section data-panel="cop" class="tabpanel" hidden>
+  <div class="panel">
+    <h2>Built-in cop</h2>
+    <p class="hint">Dashboard red strobe, doors and rear blue strobe. The controller runs it itself, so the timing is perfect. Main controller only.</p>
+    <div class="row"><button class="big primary" id="copBuiltin">Start built-in cop</button></div>
+  </div>
+  <div class="panel">
+    <h2>Pattern cop</h2>
+    <p class="hint">The phone switches lights between red and blue. Pick which light is side A (red) and side B (blue). Lights found with "Find doors" appear in these lists.</p>
+    <div class="row"><label for="sideA" style="width:64px">Side A</label><select id="sideA" class="grow"></select></div>
+    <div class="row"><label for="sideB" style="width:64px">Side B</label><select id="sideB" class="grow"></select></div>
+    <div class="row" id="sideCD" hidden>
+      <div class="row grow"><label for="sideC" style="width:64px">Side C</label><select id="sideC" class="grow"></select></div>
+      <div class="row grow"><label for="sideD" style="width:64px">Side D</label><select id="sideD" class="grow"></select></div>
+    </div>
+    <label for="pattern">Pattern</label>
+    <select id="pattern"></select>
+    <div class="slider"><label for="tempo">Tempo</label><input type="range" id="tempo" min="40" max="250" value="100"><output id="tempoOut">100%</output></div>
+    <div class="row"><button class="big primary" id="fxStart">Start</button><button class="big" id="fxStop">Stop</button></div>
+    <p class="hint" id="fxHint"></p>
+  </div>
+</section>
+
+<!-- ============ MORE ============ -->
+<section data-panel="more" class="tabpanel" hidden>
+  <div class="panel">
+    <h2>Door strip controller</h2>
+    <p class="hint">For controllers named MELK-O… (addressable "symphony" strips).</p>
+    <label for="symMode">Animation</label>
+    <div class="row"><select id="symMode" class="grow"></select><button id="btnSymMode">Play</button></div>
+    <label for="symScene">Scene</label>
+    <div class="row"><select id="symScene" class="grow"></select><button id="btnSymScene">Play</button></div>
+    <h3>Music</h3>
+    <div class="grid" id="micE1"></div>
+  </div>
+  <div class="panel">
+    <h2>Custom colour sequence</h2>
+    <div class="row" id="diyColors"></div>
+    <div class="row">
+      <button id="diyAdd">Add colour</button>
+      <button id="diyDel">Remove last</button>
+    </div>
+    <label for="diyMode">Animation</label>
+    <select id="diyMode"><option value="1">Gradient</option><option value="2">Breathe</option><option value="3">Jump</option><option value="4">Strobe</option></select>
+    <button class="primary" id="diySend">Play sequence</button>
+    <p class="hint">Uses the Brightness, Speed and "Which lights" settings from the Lights tab.</p>
+  </div>
+  <div class="panel">
+    <h2>Settings</h2>
+    <h3>Controller type</h3>
+    <label><input type="radio" name="fam" id="famE2" checked> Main controller (HRS-MBLEM, MELK-QA, MHRS-QA)</label>
+    <label><input type="radio" name="fam" id="famE1"> Door strip controller (MELK-O…)</label>
+    <p class="hint">Picked automatically when you connect.</p>
+    <div class="slider"><label for="gap">Spacing</label><input type="range" id="gap" min="10" max="200" value="60"><output id="gapOut">60</output></div>
+    <p class="hint">Milliseconds between commands. Lower makes cop patterns snappier. Raise it if the lights miss commands. The original app used 100.</p>
+    <div class="row"><button id="btnSync">Set controller clock</button><button id="btnDemo">Demo mode (no car)</button><button id="btnDisconnect">Disconnect</button></div>
+    <div class="safe">Safety lock: only display commands can be sent (power, colour, brightness, speed, effects, music, clock). Factory reset, wiring order, LED counts and pairing commands are blocked in code.</div>
+  </div>
+  <div class="panel">
+    <h2>Log</h2>
+    <div id="log" aria-live="polite"></div>
+    <div class="row"><button id="logCopy">Copy log</button><button id="logClear">Clear</button></div>
+  </div>
+</section>
+
+</main>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const hx = n => n.toString(16).padStart(2, "0").toUpperCase();
+const hex = bytes => Array.from(bytes, hx).join(" ");
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("clb." + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("clb." + k, JSON.stringify(v)); } catch {} },
+};
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast("Copied"); }
+  catch { prompt("Copy this:", text); }
+}
+
+/* ---------- log ---------- */
+function toast(msg, err) { const t = $("#toast"); t.textContent = msg; t.className = err ? "err" : ""; }
+function log(kind, msg) {
+  const el = $("#log"), line = document.createElement("div");
+  line.className = kind;
+  line.textContent = new Date().toLocaleTimeString() + "  " + ({ tx: "→ ", rx: "← ", err: "! ", info: "· " }[kind]) + msg;
+  el.append(line);
+  while (el.childElementCount > 400) el.firstElementChild.remove();
+  el.scrollTop = el.scrollHeight;
+  if (kind !== "tx") toast(msg, kind === "err");
+}
+
+/* ---------- frames (net.ble.operate.lib E1Achieve / E2Achieve) ---------- */
+function e2(cmd, payload, zone) {
+  const body = zone == null ? payload : [...payload, zone];
+  return Uint8Array.from([0x8e, body.length + 1, cmd, ...body]);
+}
+function e1(cmd, payload, len = 7) {
+  const f = [0x7e, len, cmd, 0xff, 0xff, 0xff, 0xff, 0x00, 0xef];
+  payload.slice(0, 5).forEach((b, i) => (f[3 + i] = b));
+  return Uint8Array.from(f);
+}
+
+/* ---------- safety lock: every frame passes here before it can be written ---------- */
+// Display-only commands. Everything else (87 reset, 81 wiring order, 55 door trigger,
+// 88/8C/8F host pairing, D0-D6 module setup) is refused.
+const SAFE = {
+  0x8e: new Set([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x0a, 0x83]),
+  0x7e: new Set([0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x31, 0x83]),
+};
+function isSafe(f) {
+  if (!SAFE[f[0]]?.has(f[2])) return false;
+  if (f[0] === 0x8e && f[1] !== f.length - 2) return false;            // length byte must match
+  if (f[0] === 0x7e && (f.length !== 9 || f[8] !== 0xef)) return false;
+  if (f[2] === 0x01 && f[3] === 0) return false;                       // original app never sends brightness 0
+  return true;
+}
+
+const family = () => ($("#famE1").checked ? "E1" : "E2");
+function zone() {
+  return ($("#zDash").checked ? 0x10 : 0) | ($("#zDoors").checked ? 0x20 : 0) | ($("#zRear").checked ? 0x40 : 0);
+}
+function zoneRegions() {
+  if (family() === "E1") return ["lf", "rf", "lr", "rr"];
+  const z = zone(), r = [];
+  if (z & 0x10) r.push("dash");
+  if (z & 0x20) r.push("lf", "rf", "lr", "rr");
+  if (z & 0x40) r.push("rear");
+  return r;
+}
+function clockPayload() { const d = new Date(); return [d.getHours(), d.getMinutes(), d.getSeconds(), d.getDay(), 0]; }
+const CMD = {
+  E2: {
+    power: on => e2(0x04, [on ? 1 : 0, 0], zone()),
+    bright: v => e2(0x01, [v], zone()),
+    speed: v => e2(0x02, [v], zone()),
+    color: (r, g, b) => e2(0x05, [3, r, g, b, 0x10], zone()),
+    mode: m => e2(0x03, [m, 3], zone()),
+    mic: m => e2(0x03, [m, 4], zone()),
+    sens: v => e2(0x06, [v], zone()),
+    sync: () => e2(0x83, clockPayload(), null),
+  },
+  E1: {
+    power: on => e1(0x04, [on ? 1 : 0, 0]),
+    bright: v => e1(0x01, [v], 4),
+    speed: v => e1(0x02, [v]),
+    color: (r, g, b) => e1(0x05, [3, r, g, b, 0x10]),
+    mode: m => e1(0x03, [m, 6]),
+    mic: m => e1(0x03, [m, 4]),
+    sens: v => e1(0x06, [v]),
+    scene: s => e1(0x31, [s, 7]),
+    sync: () => e1(0x83, clockPayload()),
+  },
+};
+const C = () => CMD[family()];
+
+function selfTest() {
+  const is = (f, s) => hex(f) === s;
+  const ok =
+    is(e2(0x03, [0x8a, 3], 0x70), "8E 04 03 8A 03 70") &&        // CommonUtils.getModeCommand
+    is(e2(0x05, [3, 255, 0, 0, 0x10], 0x70), "8E 07 05 03 FF 00 00 10 70") &&
+    is(e1(0x88, [0, 0xff, 0xff, 0xff, 0]), "7E 07 88 00 FF FF FF 00 EF") && // switchHost()
+    is(e1(0x03, [0x07, 6]), "7E 07 03 07 06 FF FF 00 EF") &&
+    isSafe(e2(0x05, [3, 1, 2, 3, 0x10], 0x70)) && isSafe(e1(0x31, [5, 7])) &&
+    !isSafe(e2(0x87, [], 0x70)) &&                                 // factory reset
+    !isSafe(e2(0x81, [1, 2, 3], 0xf0)) &&                          // wiring order
+    !isSafe(e1(0x88, [0, 0xff, 0xff, 0xff, 0])) &&                 // switch host
+    !isSafe(e1(0xd0, [80, 40, 40, 40, 40])) &&                     // LED counts
+    !isSafe(e1(0xd5, [1, 2])) &&                                   // group recognition
+    !isSafe(e2(0x01, [0], 0x70));
+  log(ok ? "info" : "err", ok ? "Self-test passed, safety lock on" : "Self-test FAILED, do not use");
+  return ok;
+}
+
+/* ---------- transport + latest-value-wins queue ---------- */
+const SVC = 0xfff0, WRITE = 0xfff3, NOTIFY = 0xfff4;
+const PREFIXES = ["HRS-MBLEM", "MELK-QA", "MHRS-QA", "MELK-O"];
+let device = null, chr = null, demo = false;
+const pending = new Map();
+let pumping = false;
+
+function send(frame, key) {
+  if (!isSafe(frame)) { log("err", "Blocked by safety lock: " + hex(frame)); return false; }
+  if (!chr && !demo) { log("err", "Not connected. Tap Connect, or use Demo mode in More."); return false; }
+  pending.set(key ?? Symbol(), frame); // same key replaces the queued frame, so a slider's last value always goes out
+  pump();
+  return true;
+}
+async function pump() {
+  if (pumping) return;
+  pumping = true;
+  while (pending.size) {
+    const [k, f] = pending.entries().next().value;
+    pending.delete(k);
+    try {
+      if (!demo) {
+        if (chr.properties.writeWithoutResponse) await chr.writeValueWithoutResponse(f);
+        else await chr.writeValueWithResponse(f);
+      }
+      log("tx", hex(f));
+    } catch (e) { log("err", "Send failed: " + e.message); }
+    await sleep(+$("#gap").value);
+  }
+  pumping = false;
+}
+function setStatus(text, cls) { $("#dot").className = "dot " + (cls || ""); $("#statusText").textContent = text; }
+function setFamily(f) {
+  (f === "E1" ? $("#famE1") : $("#famE2")).checked = true;
+  onFamily();
+}
+function onFamily() {
+  const e1 = family() === "E1";
+  $("#zonePanel").hidden = e1;
+  $("#zoneNoteE1").hidden = !e1;
+  fillSides();
+}
+$("#famE1").onchange = $("#famE2").onchange = onFamily;
+
+async function connect() {
+  if (!navigator.bluetooth) {
+    log("err", "This browser can't use Bluetooth. Use Chrome on Android, and turn on Bluetooth and Location.");
+    return;
+  }
+  try {
+    device = await navigator.bluetooth.requestDevice({ filters: PREFIXES.map(p => ({ namePrefix: p })), optionalServices: [SVC] });
+  } catch (e) {
+    if (e.name === "NotFoundError") log("info", "No controller picked. Is the old app or another phone still connected to it?");
+    else log("err", e.message);
+    return;
+  }
+  try {
+    device.addEventListener("gattserverdisconnected", () => { chr = null; stopFx(); setStatus("Disconnected"); log("info", "Lights disconnected"); });
+    setStatus("Connecting to " + (device.name || "controller") + "…");
+    const gatt = await device.gatt.connect();
+    const svc = await gatt.getPrimaryService(SVC);
+    chr = await svc.getCharacteristic(WRITE);
+    demo = false;
+    const name = device.name || "";
+    setFamily(name.startsWith("MELK-O") ? "E1" : "E2");
+    setStatus(name + " connected", "on");
+    log("info", "Connected to " + name);
+    if (chr.properties.read) {
+      const v = new Uint8Array((await chr.readValue()).buffer);
+      const end = v.indexOf(0);
+      log("rx", "Firmware: " + String.fromCharCode(...v.slice(0, end < 0 ? v.length : end)));
+    }
+    try {
+      const n = await svc.getCharacteristic(NOTIFY);
+      n.addEventListener("characteristicvaluechanged", e => log("rx", hex(new Uint8Array(e.target.value.buffer))));
+      await n.startNotifications();
+    } catch {}
+    await sleep(200);
+    send(C().sync(), "sync");
+  } catch (e) {
+    log("err", "Could not connect: " + e.message);
+    if (!chr) setStatus("Not connected");
+  }
+}
+$("#btnConnect").onclick = connect;
+$("#btnDemo").onclick = () => { demo = true; setStatus("Demo mode, nothing is sent", "demo"); log("info", "Demo mode: commands only show in the log"); };
+$("#btnDisconnect").onclick = () => { stopFx(); if (device?.gatt?.connected) device.gatt.disconnect(); demo = false; chr = null; setStatus("Not connected"); };
+
+/* ---------- tabs ---------- */
+function showTab(name) {
+  document.querySelectorAll(".tabs button").forEach(b => b.setAttribute("aria-selected", b.dataset.tab === name));
+  document.querySelectorAll(".tabpanel").forEach(p => (p.hidden = p.dataset.panel !== name));
+  store.set("tab", name);
+}
+document.querySelectorAll(".tabs button").forEach(b => (b.onclick = () => showTab(b.dataset.tab)));
+showTab(store.get("tab", "lights"));
+
+/* ---------- car preview ---------- */
+const OFF = "#1a232a";
+function paint(regions, rgb) {
+  const fill = rgb && (rgb[0] || rgb[1] || rgb[2]) ? `rgb(${rgb.join(",")})` : OFF;
+  regions.forEach(r => $("#r-" + r)?.setAttribute("fill", fill));
+}
+const hexToRgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+
+/* ---------- lights tab ---------- */
+function bindSlider(id, fn, fmt = v => v) {
+  const el = $("#" + id), out = $("#" + id + "Out");
+  out.textContent = fmt(el.value);
+  el.addEventListener("input", () => { out.textContent = fmt(el.value); fn?.(+el.value); });
+}
+bindSlider("bright", v => send(C().bright(v), "bright"));
+bindSlider("speed", v => send(C().speed(v), "speed"));
+bindSlider("sens", v => send(C().sens(v), "sens"));
+bindSlider("gap");
+$("#btnOn").onclick = () => send(C().power(true));
+$("#btnOff").onclick = () => { stopFx(); if (send(C().power(false))) paint(zoneRegions(), null); };
+$("#btnSync").onclick = () => send(C().sync(), "sync");
+function sendColor(h) {
+  const [r, g, b] = hexToRgb(h);
+  if (send(C().color(r, g, b), "color")) paint(zoneRegions(), [r, g, b]);
+}
+$("#color").addEventListener("input", e => sendColor(e.target.value));
+["#ff0000", "#ff7a00", "#ffd000", "#00ff40", "#00e5ff", "#0040ff", "#a000ff", "#ff00a0", "#ffffff"].forEach(c => {
+  const b = document.createElement("button");
+  b.className = "sw"; b.style.background = c; b.setAttribute("aria-label", "Colour " + c);
+  b.onclick = () => { $("#color").value = c; sendColor(c); };
+  $("#swatches").append(b);
+});
+function btn(label, onclick) { const b = document.createElement("button"); b.textContent = label; b.onclick = onclick; return b; }
+
+const MODES = [[0x8a, "7-colour breathe"], [0xa2, "7-colour + red breathe"], [0x95, "7-colour strobe"], [0xa1, "Tricolour strobe"],
+  [0x8c, "Green gradient"], [0x8d, "Blue gradient"], [0x8e, "Yellow gradient"], [0x90, "Purple gradient"], [0x91, "White gradient"], [0x94, "Green-blue gradient"],
+  [0x96, "Red strobe"], [0x97, "Green strobe"], [0x98, "Blue strobe"], [0x99, "Yellow strobe"], [0x9a, "Cyan strobe"], [0x9b, "Purple strobe"], [0x9c, "White strobe"],
+  [0xa3, "Yellow-white fade"], [0xb1, "White-blue fade"], [0xb2, "Yellow-purple-red jump"]];
+MODES.forEach(([id, n]) => $("#modes").append(btn(n, () => send(C().mode(id)))));
+
+const PRESET_NAMES = ["Ocean Blue", "Fire Red", "Red Moon", "Purple Sky", "Dawn Blue", "Sun Yellow", "Jungle Green", "Lucky Purple", "Rainbow Shine", "Dancing Bar", "Blue Night", "Golden Time", "Coffee Time", "Flaming Cyan", "Purple Shine", "Yellow Step", "Color life", "Green rise", "Cloud cover", "Dance Purple", "Latin show", "Blue Eye", "Sunset light", "Danger love", "Accumulation of emotions"];
+const CENTRAL = [130, 128, 134, 133, 141, 163, 152, 144, 162, 149, 141, 178, 142, 131, 149, 163, 177, 140, 156, 154, 149, 178, 153, 161, 145];
+const DOORS = [129, 132, 128, 129, 132, 177, 140, 153, 162, 149, 141, 178, 142, 177, 144, 178, 138, 151, 153, 155, 150, 148, 152, 162, 129];
+PRESET_NAMES.forEach((n, i) => $("#presets").append(btn(n, () => {
+  if (CENTRAL[i] === DOORS[i]) send(e2(0x03, [CENTRAL[i], 3], 0x70));
+  else { send(e2(0x03, [CENTRAL[i], 3], 0x10)); send(e2(0x03, [DOORS[i], 3], 0x60)); }
+})));
+["Classic", "Soft", "Dynamic", "Disco"].forEach((n, i) => $("#micModes").append(btn(n, () => send(CMD.E2.mic(0x80 + i)))));
+
+/* ---------- more tab ---------- */
+const IRID_NAMES = ["Auto loop", "Positive Iridescence", "Reverse Iridescence", "Colorful Energy", "Seven Color Jump", "RGB Jump", "YBP Jump", "Seven Color Strobe", "RGB Strobe", "YBP Strobe", "Seven Color Gradient", "RY Alternate Gradient", "RP Alternate Gradient", "GB Alternate Gradient", "GY Alternate Gradient", "BP Alternate Gradient", "R Horse Racing", "G Horse Racing", "B Horse Racing", "Y Horse Racing", "BB Horse Racing", "P Horse Racing", "W Horse Racing", "Positive Colorful Follow Light", "Reverse Colorful Follow Light", "Positive RGB Follow Light", "Reverse RGB Follow Light", "Positive YBP Follow Light", "Reverse YBP Follow Light", "Positive Colorful Float", "Reverse Colorful Float", "Positive RGB Float", "Reverse RGB Float", "Positive YBP Float", "Reverse YBP Float", "Positive Colorful Brush", "Reverse Colorful Brush", "Positive RGB Brush", "Reverse RGB Brush", "Positive YBP Brush", "Reverse YBP Brush", "Colorful Brush Closing", "Colorful Brush Draw Curtain", "RGB Brush Closing", "RGB Brush Draw Curtain", "YBP Brush Closing", "YBP Brush Draw Curtain", "Colorful Closing", "Colorful Draw Curtain", "RGB Closing", "RGB Draw Curtain", "YBP Closing", "YBP Draw Curtain", "R Closing", "R Draw Curtain", "G Closing", "G Draw Curtain", "B Closing", "B Draw Curtain", "Y Closing", "Y Draw Curtain", "BB Closing", "BB Draw Curtain", "P Closing", "P Draw Curtain", "W Closing", "W Draw Curtain", "Positive Colorful ld Trans", "Reverse Colorful ld Trans", "Positive RGB ld Trans", "Reverse RGB ld Trans", "Positive YBP ld Trans", "Reverse YBP ld Trans", "Positive Six Color ld Trans R", "Reverse Six Color ld Trans R", "Positive Six Color ld Trans G", "Reverse Six Color ld Trans G", "Positive Six Color ld Trans B", "Reverse Six Color ld Trans B", "Positive Six Color ld Trans BB", "Reverse Six Color ld Trans BB", "Positive Six Color ld Trans Y", "Reverse Six Color ld Trans Y", "Positive Six Color ld Trans P", "Reverse Six Color ld Trans P", "Positive Six Color ld Trans W", "Reverse Six color ld trans w", "Positive Colorful Running Water", "Reverse Colorful Running Water", "Positive RGB Running Water", "Reverse RGB Running Water", "Positive YBP Running Water", "Reverse YBP Running Water", "Positive RG Running Water", "Reverse RG Running Water", "Positive GB Running Water", "Reverse GB Running Water", "Positive YB Running Water", "Reverse YB Running Water", "Positive YBB Running Water", "Reverse YBB Running Water", "Positive BBP Running Water", "Reverse BBP Running Water", "Positive Black W Running Water", "Reverse Black W Running water", "Positive WRW Flow", "Reverse WRW Flow", "Positive WGW Flow", "Reverse WGW Flow", "Positive WBW Flow", "Reverse WBW Flow", "Positive WYW Flow", "Reverse WYW Flow", "Positive WBBW Flow", "Reverse WBBW Flow", "Positive WPW Flow", "Reverse WPW Flow", "Positive RWR Flow", "Reverse RWR Flow", "Positive GWG Flow", "Reverse GWG Flow", "Positive BWB Flow", "Reverse BWB Flow", "Positive YWY Flow", "Reverse YWY Flow", "Positive BBWBB Flow", "Reverse BBWBB Flow", "Positive PWP Flow", "Reverse PWP Flow", "Positive Colorful Tailing", "Reverse Colorful Tailing", "Positive R Tailing", "Reverse R Tailing", "Positive G Tailing", "Reverse G Tailing", "Positive B Tailing", "Reverse B Tailing", "Positive Y Tailing", "Reverse Y Tailing", "Positive BB Tailing", "Reverse BB Tailing", "Positive P Tailing", "Reverse P Tailing", "Positive W Tailing", "Reverse W Tailing", "Positive R Running", "Positive G Running", "Positive B Running", "Positive Y Running", "Positive BB Running", "Positive P Running", "Positive W Running", "Positive Colorful Running", "Positive RGB Running", "Positive YBP Running", "Positive BPBY Running", "Positive BGBY Running", "Positive WR Running", "Positive RG Running", "Positive GB Running", "Positive BY Running", "Positive YBB Running", "Positive BBP Running", "Positive PW Running", "Positive RW Running", "Positive R Colorful Running", "Positive G Colorful Running", "Positive B Colorful Running", "Positive Y Colorful Running", "BB Colorful Running", "P Colorful Running", "W Colorful Running", "BG Running", "RRG Running", "BR Running", "YYBB Running", "PY Running", "YW Running", "WY Running", "Reverse R Running", "Reverse G Running", "Reverse B Running", "Reverse Y running", "Reverse BB Running", "Reverse P Running", "Reverse W Running", "Reverse Colorful Running", "Reverse RGB Running", "Reverse YBP Running", "Reverse BPBBY Running", "Reverse BGBBY Running", "Reverse WR Running", "Reverse RG Running", "Reverse GB Running", "Reverse BY Running", "Reverse YBB Running", "Reverse BBP Running", "Reverse PW Running", "Reverse RW Running", "Reverse R Colorful Running", "Reverse G Colorful Running", "Reverse B Colorful Running", "Reverse Y Colorful Running", "Reverse BB Colorful Running", "Reverse P Colorful Running", "Reverse W Colorful Running", "Reverse BG Running", "Reverse RRG Running", "Reverse BR Running", "Reverse YYBB Running", "Reverse PY Running", "Reverse YW Running", "Reverse WY Running"];
+const IRID_CMDS = [0, 1, 2, 212, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 89, 91, 93, 95, 97, 99, 101, 103, 105, 107, 109, 111, 113, 115, 117, 119, 121, 123, 125, 127, 129, 131, 133, 135, 137, 139, 141, 167, 169, 171, 173, 175, 177, 179, 90, 92, 94, 96, 98, 100, 102, 104, 106, 108, 110, 112, 114, 116, 118, 120, 122, 124, 126, 128, 130, 132, 134, 136, 138, 140, 142, 168, 170, 172, 174, 176, 178, 180];
+const SCENES = [[1, "Sunrise"], [2, "Sunset"], [3, "Birthday"], [4, "Candlelight"], [5, "Fireworks"], [7, "Dating"], [8, "Starry Sky"], [9, "Romantic"], [10, "Disco"], [11, "Rainbow"],
+  [13, "Christmas Eve"], [14, "Running Water"], [16, "Ocean"], [17, "Forest"], [18, "Read"], [20, "Colorful"], [21, "Soft"], [22, "Wedding Anniversary"], [23, "Snowflake"], [24, "Flame"],
+  [25, "Lightning"], [26, "Valentine Day"], [28, "Alarm"], [150, "Time Machine"], [152, "Time Machine Two"], [154, "Meteor"], [155, "Meteor Two"], [156, "Fireworks Show"]];
+IRID_NAMES.forEach((n, i) => $("#symMode").append(new Option(n, IRID_CMDS[i])));
+SCENES.forEach(([id, n]) => $("#symScene").append(new Option(n, id)));
+$("#btnSymMode").onclick = () => send(CMD.E1.mode(+$("#symMode").value));
+$("#btnSymScene").onclick = () => send(CMD.E1.scene(+$("#symScene").value));
+["Energy 1", "Rhythm 1", "Spectrum 1", "Rolling 1", "Energy 2", "Rhythm 2", "Spectrum 2", "Rolling 2"]
+  .forEach((n, i) => $("#micE1").append(btn(n, () => send(CMD.E1.mic(0x81 + i)))));
+
+let diy = store.get("diy", ["#ff0000", "#0000ff", "#ffffff"]);
+function renderDiy() {
+  $("#diyColors").innerHTML = "";
+  diy.forEach((c, i) => {
+    const inp = document.createElement("input");
+    inp.type = "color"; inp.value = c; inp.id = "diy" + i; inp.setAttribute("aria-label", "Sequence colour " + (i + 1));
+    inp.oninput = () => { diy[i] = inp.value; store.set("diy", diy); };
+    $("#diyColors").append(inp);
+  });
+}
+renderDiy();
+$("#diyAdd").onclick = () => { if (diy.length < 16) { diy.push("#00ff00"); store.set("diy", diy); renderDiy(); } };
+$("#diyDel").onclick = () => { if (diy.length > 1) { diy.pop(); store.set("diy", diy); renderDiy(); } };
+$("#diySend").onclick = () => { // CommonUtils.getSendDiyCommand
+  const z = zone(), b = +$("#bright").value, s = +$("#speed").value, m = +$("#diyMode").value;
+  const head = phase => e2(0x0a, [0, 1, b, s, m, phase], z);
+  send(head(1));
+  diy.forEach((c, i) => send(e2(0x0a, [i + 1, ...hexToRgb(c)], z)));
+  send(head(2)); send(head(3));
+};
+$("#logClear").onclick = () => ($("#log").innerHTML = "");
+$("#logCopy").onclick = () => copyText($("#log").innerText);
+
+/* ---------- door finder ---------- */
+// Each test sends the normal "set colour red" command with one hidden byte changed:
+// main controller = the zone byte; door strip controller = the colour-type byte.
+const TESTS = {
+  E2: [0x20, 0x01, 0x02, 0x04, 0x08, 0x03, 0x0c, 0x05, 0x0a, 0x0f, 0x21, 0x22, 0x24, 0x28, 0x80, 0x30, 0x50],
+  E1: [0x10, 0x00, 0x01, 0x02, 0x03, 0x04, 0x11, 0x12, 0x13, 0x14, 0x18, 0x0f, 0x20],
+};
+const redWith = (fam, v) => fam === "E2" ? e2(0x05, [3, 255, 0, 0, 0x10], v) : e1(0x05, [3, 255, 0, 0, v]);
+const allOff = fam => fam === "E2" ? e2(0x05, [3, 0, 0, 0, 0x10], 0x70) : e1(0x05, [3, 0, 0, 0, 0x10]);
+const ANSWERS = [
+  ["none", "Nothing", []], ["all", "Everything", ["dash", "lf", "rf", "lr", "rr", "rear"]],
+  ["dash", "Dashboard", ["dash"]], ["doors", "All 4 doors", ["lf", "rf", "lr", "rr"]],
+  ["lf", "Front-left door", ["lf"]], ["rf", "Front-right door", ["rf"]],
+  ["lr", "Rear-left door", ["lr"]], ["rr", "Rear-right door", ["rr"]],
+  ["left", "Both left doors", ["lf", "lr"]], ["right", "Both right doors", ["rf", "rr"]],
+  ["rear", "Rear / trunk", ["rear"]], ["other", "Something else", []],
+];
+let finder = { fam: "E2", i: -1 };
+let results = store.get("results", []); // {fam, v, answer}
+async function flash() {
+  const v = TESTS[finder.fam][finder.i];
+  if (v == null) {
+    $("#fRun").hidden = true;
+    toast("Finder done. Check Results below.");
+    return;
+  }
+  $("#fRun").hidden = false;
+  $("#fStep").textContent = `Test ${finder.i + 1} of ${TESTS[finder.fam].length}`;
+  $("#fAsk").textContent = finder.i === 0 ? "Check test: all doors should be red. What turned red?" : "What turned red?";
+  if (!send(allOff(finder.fam))) return;
+  paint(["dash", "lf", "rf", "lr", "rr", "rear"], null);
+  await sleep(500);
+  send(redWith(finder.fam, v));
+}
+$("#fStart").onclick = () => { stopFx(); finder = { fam: family(), i: 0 }; flash(); };
+$("#fAgain").onclick = () => { if (finder.i >= 0) flash(); };
+$("#fSkip").onclick = () => { if (finder.i >= 0) { finder.i++; flash(); } };
+$("#fBack").onclick = () => { if (finder.i > 0) { finder.i--; flash(); } };
+ANSWERS.forEach(([key, label, regions]) => $("#fAnswers").append(btn(label, () => {
+  const v = TESTS[finder.fam][finder.i];
+  if (v == null) return;
+  results = results.filter(r => !(r.fam === finder.fam && r.v === v));
+  results.push({ fam: finder.fam, v, answer: key });
+  store.set("results", results);
+  paint(regions, [255, 0, 0]);
+  renderResults(); fillSides();
+  finder.i++;
+  setTimeout(flash, 350);
+})));
+const answer = k => ANSWERS.find(a => a[0] === k);
+function renderResults() {
+  const box = $("#fFound"); box.innerHTML = "";
+  if (!results.length) { box.innerHTML = '<p class="hint">Nothing tested yet.</p>'; return; }
+  results.forEach(r => {
+    const d = document.createElement("div"), a = document.createElement("span"), c = document.createElement("span");
+    a.textContent = answer(r.answer)[1];
+    c.className = "code"; c.textContent = (r.fam === "E2" ? "main " : "strip ") + hx(r.v);
+    d.append(a, c); box.append(d);
+  });
+}
+renderResults();
+$("#fCopy").onclick = () => copyText(JSON.stringify(results.map(r => ({ controller: r.fam, code: hx(r.v), lit: answer(r.answer)[1] }))));
+$("#fClear").onclick = () => { results = []; store.set("results", results); renderResults(); fillSides(); };
+
+/* ---------- cop ---------- */
+// A "light" is one colour command target. Built-ins are the known zones; finder results add more.
+function lights() {
+  const list = family() === "E2"
+    ? [{ id: "e2-10", label: "Dashboard", fam: "E2", v: 0x10, regions: ["dash"] },
+       { id: "e2-20", label: "All doors", fam: "E2", v: 0x20, regions: ["lf", "rf", "lr", "rr"] },
+       { id: "e2-40", label: "Rear", fam: "E2", v: 0x40, regions: ["rear"] },
+       { id: "e2-60", label: "Doors + rear", fam: "E2", v: 0x60, regions: ["lf", "rf", "lr", "rr", "rear"] }]
+    : [{ id: "e1-10", label: "All door strips", fam: "E1", v: 0x10, regions: ["lf", "rf", "lr", "rr"] }];
+  results.filter(r => r.fam === family() && !["none", "all", "other"].includes(r.answer)).forEach(r => {
+    const [, label, regions] = answer(r.answer);
+    if (!list.some(l => l.id === r.fam.toLowerCase() + "-" + hx(r.v))) list.push({ id: r.fam.toLowerCase() + "-" + hx(r.v), label: label + " (found)", fam: r.fam, v: r.v, regions });
+  });
+  return list;
+}
+const lightFrame = (l, [r, g, b]) => l.fam === "E2" ? e2(0x05, [3, r, g, b, 0x10], l.v) : e1(0x05, [3, r, g, b, l.v]);
+function fillSides() {
+  const ls = lights(), saved = store.get("sides", {});
+  const defaults = { sideA: "e2-10", sideB: "e2-60", sideC: "", sideD: "" };
+  ["sideA", "sideB", "sideC", "sideD"].forEach(id => {
+    const sel = $("#" + id), want = sel.value || saved[id] || defaults[id];
+    sel.innerHTML = "";
+    if (id === "sideC" || id === "sideD") sel.append(new Option("Not used", ""));
+    ls.forEach(l => sel.append(new Option(l.label, l.id)));
+    sel.value = ls.some(l => l.id === want) ? want : sel.options[id === "sideB" && ls.length > 1 ? 1 : 0].value;
+  });
+}
+["sideA", "sideB", "sideC", "sideD"].forEach(id => $("#" + id).addEventListener("change", () => {
+  store.set("sides", Object.fromEntries(["sideA", "sideB", "sideC", "sideD"].map(k => [k, $("#" + k).value])));
+}));
+
+// Each step: one colour per side (A, B, …) then milliseconds. Add your own pattern here.
+const R = [255, 0, 0], B = [0, 40, 255], W = [255, 255, 255], O = [0, 0, 0];
+const flashes = (c1, c2, n, on, off) => Array.from({ length: n }, () => [[c1, c2, on], [O, O, off]]).flat();
+const PATTERNS = {
+  wigwag:   { name: "Wig-wag", steps: [[R, O, 160], [O, B, 160]] },
+  double:   { name: "Double strobe", steps: [...flashes(R, O, 2, 55, 45), [O, O, 90], ...flashes(O, B, 2, 55, 45), [O, O, 90]] },
+  triple:   { name: "Triple strobe", steps: [...flashes(R, O, 3, 40, 40), [O, O, 80], ...flashes(O, B, 3, 40, 40), [O, O, 80]] },
+  swap:     { name: "Swap", steps: [[R, B, 280], [B, R, 280]] },
+  takedown: { name: "Takedown", steps: [...flashes(W, W, 3, 45, 45), [R, B, 300], [B, R, 300]] },
+  combo:    { name: "Pursuit combo", steps: [
+    ...Array(3).fill([...flashes(R, O, 2, 55, 45), [O, O, 90], ...flashes(O, B, 2, 55, 45), [O, O, 90]]).flat(),
+    ...Array(4).fill([[R, B, 140], [B, R, 140]]).flat(),
+    ...flashes(W, W, 4, 35, 45),
+    ...Array(4).fill([...flashes(R, O, 3, 35, 35), ...flashes(O, B, 3, 35, 35)]).flat(),
+  ] },
+  orbit:    { name: "Orbit (needs 4 sides)", steps: [[R, O, O, B, 110], [B, R, O, O, 110], [O, B, R, O, 110], [O, O, B, R, 110]] },
+};
+Object.entries(PATTERNS).forEach(([k, p]) => $("#pattern").append(new Option(p.name, k)));
+$("#pattern").onchange = () => ($("#sideCD").hidden = $("#pattern").value !== "orbit");
+bindSlider("tempo", null, v => v + "%");
+
+let fxTimer = null, wakeLock = null;
+function stopFx() {
+  clearTimeout(fxTimer); fxTimer = null;
+  wakeLock?.release().catch(() => {}); wakeLock = null;
+}
+async function startFx() {
+  stopFx();
+  const p = PATTERNS[$("#pattern").value];
+  const n = p.steps[0].length - 1;
+  const ls = lights();
+  const sides = ["sideA", "sideB", "sideC", "sideD"].slice(0, n).map(id => ls.find(l => l.id === $("#" + id).value));
+  if (sides.some(s => !s)) return log("err", `${p.name} needs ${n} sides picked`);
+  if (!chr && !demo) return log("err", "Not connected. Tap Connect, or use Demo mode in More.");
+  try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
+  const shortest = Math.min(...p.steps.map(s => s[n])) * 100 / +$("#tempo").value;
+  $("#fxHint").textContent = `Fastest step ${Math.round(shortest)} ms; ${n} lights need about ${n * +$("#gap").value} ms per step at the current spacing. Too fast and some flashes are skipped (never delayed).`;
+  let i = 0;
+  const last = [];
+  const tick = () => {
+    const st = p.steps[i++ % p.steps.length];
+    for (let k = 0; k < n; k++) {
+      if (last[k] === st[k]) continue; // only send what changed
+      last[k] = st[k];
+      send(lightFrame(sides[k], st[k]), "fx" + k);
+      paint(sides[k].regions, st[k]);
+    }
+    fxTimer = setTimeout(tick, st[n] * 100 / +$("#tempo").value);
+  };
+  tick();
+}
+$("#fxStart").onclick = startFx;
+$("#fxStop").onclick = stopFx;
+$("#copBuiltin").onclick = () => {
+  stopFx();
+  if (family() !== "E2") return log("err", "Built-in cop needs the main controller");
+  const a = send(e2(0x03, [0x96, 3], 0x10)); // red strobe on dashboard
+  const b = send(e2(0x03, [0x98, 3], 0x60)); // blue strobe on doors + rear
+  if (a && b) { paint(["dash"], R); paint(["lf", "rf", "lr", "rr", "rear"], B); }
+};
+
+onFamily();
+selfTest();
+if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
