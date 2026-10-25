@@ -1,0 +1,9 @@
+{
+  "name": "carlight",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test protocol.test.mjs",
+    "start": "python -c \"import http.server as h; h.SimpleHTTPRequestHandler.extensions_map['.js'] = 'text/javascript'; h.test(h.SimpleHTTPRequestHandler, port=8765, bind='127.0.0.1')\""
+  }
+}
